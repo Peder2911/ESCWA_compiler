@@ -1,0 +1,59 @@
+---
+title: SDG indikatorer 
+#output: pdf_document 
+---
+
+```{R include = FALSE}
+library(reticulate)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+```
+
+```{python include = FALSE}
+import sqlite3
+import pandas as pd
+
+# ========================================================
+
+db = sqlite3.connect("data/db.sqlite")
+
+indicators = pd.read_sql("SELECT * FROM META_indicators",db)
+
+def getIndicatorValues(row):
+    indicator = row["SeriesCode"]
+    return pd.read_sql(f"SELECT TimePeriod, GeoAreaCode FROM {indicator}",db)
+
+
+goalValues = []
+for goal in set(indicators.Goal):
+    allvalues = indicators[indicators.Goal == goal].apply(getIndicatorValues,1)
+    allvalues = pd.concat(list(allvalues))
+    allvalues["Goal"] = goal
+    goalValues.append(allvalues)
+goalValues = pd.concat(goalValues)
+
+def getSeriesInfo(row,query):
+    indicator = row["SeriesCode"]
+    c = db.cursor()
+    
+    c.execute(query + f" FROM {indicator}")
+    return c.fetchone()[0]
+defineAs = lambda q: indicators.apply(getSeriesInfo,1,query = q)
+indicators["start"] = defineAs("SELECT MIN(TimePeriod)")
+indicators["end"] = defineAs("SELECT MAX(TimePeriod)")
+indicators["count"] = defineAs("SELECT COUNT(*)")
+indicators["unique"] = defineAs("SELECT COUNT(DISTINCT TimePeriod||GeoAreaCode)")
+
+db.close()
+```
+
+```{r fig.height = 8}
+ggplot(py$goalValues) +
+   geom_histogram(aes(x=TimePeriod,fill = factor(GeoAreaCode)),binwidth = 1)+
+   facet_wrap(~Goal,ncol = 1)
+```
+
+```{r}
+kable(py$indicators)
+```
